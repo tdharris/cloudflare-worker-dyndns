@@ -63,21 +63,11 @@ async function informAPI(url, name, token) {
 		}
 
 		const zone = await cloudflare.findZone(name);
-		if (!zone) {
-			throw new BadRequestException('Zone not found.');
-		}
-
 		const record = await cloudflare.findRecord(zone, hostname);
-		if (!record) {
-			throw new BadRequestException('DNS record not found.');
-		}
-
 		const result = await cloudflare.updateRecord(record, ip);
-		if (!result) {
-			throw new BadRequestException('Failed to update DNS record.');
-		}
 
 		// Only returns this response when no exception is thrown.
+		console.log(`INFO Successfully updated record.`);
 		return new Response(`good`, {
 			status: 200,
 			headers: {
@@ -87,7 +77,7 @@ async function informAPI(url, name, token) {
 		});
 	} catch (err) {
 		// Log the detailed error internally
-		console.error(`Error: ${JSON.stringify(err)}`);
+		console.error(`ERROR Worked failed to update record: ${JSON.stringify(err)}`);
 
 		const message = err.reason || err.message || 'Unknown Error';
 		return new Response(message, {
@@ -168,6 +158,14 @@ class BadRequestException {
 	}
 }
 
+class CloudflareApiException extends Error {
+	constructor(reason) {
+		super(reason);
+		this.status = 500;
+		this.statusText = "Internal Server Error";
+	}
+}
+
 class Cloudflare {
 	constructor(options) {
 		this.cloudflare_url = 'https://api.cloudflare.com/client/v4';
@@ -201,6 +199,9 @@ class Cloudflare {
 				},
 			});
 			const body = await response.json();
+			if (!body.success || body.result.length === 0) {
+				throw new CloudflareApiException(`Failed to find zone '${name}'`);
+			}
 			return body.result[0];
 		};
 
@@ -212,6 +213,9 @@ class Cloudflare {
 				},
 			});
 			const body = await response.json();
+			if (!body.success || body.result.length === 0) {
+				throw new CloudflareApiException(`Failed to find dns record '${name}'`);
+			}
 			return body.result[0];
 		};
 
@@ -226,6 +230,9 @@ class Cloudflare {
 				body: JSON.stringify(record),
 			});
 			const body = await response.json();
+			if (!body.success) {
+				throw new CloudflareApiException("Failed to update dns record");
+			}
 			return body.result[0];
 		};
 	}
@@ -239,7 +246,7 @@ export default {
 			const message = err.reason || err.stack || 'Unknown Error';
 
 			// Log the detailed error internally
-			console.error('ERROR:', request.method, request.url, '=>', err);
+			console.error('ERROR', request.method, request.url, '=>', err);
 
 			return new Response(message, {
 				status: err.status || 500,
