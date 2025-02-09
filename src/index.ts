@@ -1,4 +1,24 @@
-import { Cloudflare, ClientOptions } from 'cloudflare'; // Import the official Cloudflare library
+import { Cloudflare, ClientOptions } from 'cloudflare';
+
+class UnauthorizedException extends Error {
+	status: number;
+	statusText: string;
+	constructor(message: string) {
+		super(message);
+		this.status = 401;
+		this.statusText = 'Unauthorized';
+	}
+}
+
+class BadRequestException extends Error {
+	status: number;
+	statusText: string;
+	constructor(message: string) {
+		super(message);
+		this.status = 400;
+		this.statusText = 'Bad Request';
+	}
+}
 
 type UpdateRecordRequest = {
 	hostname: string;
@@ -21,19 +41,16 @@ async function handleRequest(request) {
 
 	switch (pathname) {
 		case '/nic/update':
-		case '/update':
-			if (request.headers.has('Authorization')) {
-				const { username, password } = parseBasicAuthentication(request);
-				const cloudflareClientOptions = { apiEmail: username, apiToken: password };
+		case '/update': {
+			const { username, password } = parseBasicAuthentication(request);
+			const cloudflareClientOptions = { apiEmail: username, apiToken: password };
 
-				// Throws exception when query parameters aren't formatted correctly
-				const url = new URL(request.url);
-				const updateRecordRequest = parseSearchParams(url);
+			// Throws exception when query parameters aren't formatted correctly
+			const url = new URL(request.url);
+			const updateRecordRequest = parseSearchParams(url);
 
-				return await updateDNSRecord(updateRecordRequest, cloudflareClientOptions);
-			}
-
-			throw new UnauthorizedException('Please provide valid credentials.');
+			return await updateDNSRecord(updateRecordRequest, cloudflareClientOptions);
+		}
 
 		case '/favicon.ico':
 		case '/robots.txt':
@@ -44,10 +61,10 @@ async function handleRequest(request) {
 }
 
 /**
- * Pass the request info to the Cloudflare API Handler
- * @param {URL} url
- * @param {String} name
- * @param {String} token
+ * Updates a DNS record with the given IP address.
+ * @param {String} hostname
+ * @param {String} ip
+ * @param {String} zoneName
  * @returns {Promise<Response>}
  */
 async function updateDNSRecord({
@@ -97,7 +114,6 @@ async function updateDNSRecord({
 	});
 	console.log(`INFO Updated record '${record.name}' to '${ip}'`);
 
-	// Only returns this response when no exception is thrown.
 	return new Response(`good`, {
 		status: 200,
 		headers: {
@@ -108,7 +124,7 @@ async function updateDNSRecord({
 }
 
 /**
- * Throws exception on verification failure.
+ * Parse search parameters from URL.
  * @param {string} url
  * @throws {UnauthorizedException}
  */
@@ -135,13 +151,16 @@ function parseSearchParams(url: URL): UpdateRecordRequest {
 }
 
 /**
- * Parse HTTP Basic Authorization value.
+ * Parse basic authentication from request headers.
  * @param {Request} request
  * @throws {UnauthorizedException}
  * @returns {{ username: string, password: string }}
  */
 function parseBasicAuthentication(request) {
 	const Authorization = request.headers.get('Authorization');
+	if (!Authorization) {
+		throw new UnauthorizedException('Please provide valid credentials.');
+	}
 
 	const [scheme, encoded] = Authorization.split(' ');
 
@@ -166,45 +185,37 @@ function parseBasicAuthentication(request) {
 	};
 }
 
-class UnauthorizedException {
-	constructor(message) {
-		this.status = 401;
-		this.statusText = 'Unauthorized';
-		this.message = message;
-	}
-}
-
-class BadRequestException {
-	constructor(message) {
-		this.status = 400;
-		this.statusText = 'Bad Request';
-		this.message = message;
-	}
-}
-
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
 		try {
 			console.log(`INFO Requesting IP: ${request.headers.get('CF-Connecting-IP')}`);
 			return await handleRequest(request);
 		} catch (err) {
-			const message = err.message || err.stack || 'Unknown Error';
-
-			// Log the detailed error internally
 			console.error('ERROR', request.method, request.url, '=>', err);
-
-			return new Response(message, {
-				status: err.status || 500,
-				statusText: err.statusText || null,
-				headers: {
-					'Content-Type': 'text/plain;charset=UTF-8',
-					'Cache-Control': 'no-store',
-					'Content-Length': message.length,
-					'X-Content-Type-Options': 'nosniff',
-					'X-Frame-Options': 'DENY',
-					'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
-				},
-			});
+			if (err instanceof UnauthorizedException || err instanceof BadRequestException) {
+				return new Response(err.message, {
+					status: err.status,
+					statusText: err.statusText,
+					headers: {
+						'Content-Length': `${err.message.length}`,
+						...defaultHttpHeaders,
+					},
+				});
+			} else {
+				return new Response('Unknown Error', {
+					status: 500,
+					statusText: 'Internal Server Error',
+					headers: defaultHttpHeaders,
+				});
+			}
 		}
 	},
 } satisfies ExportedHandler<Env>;
+
+const defaultHttpHeaders = {
+	'Content-Type': 'text/plain;charset=UTF-8',
+	'Cache-Control': 'no-store',
+	'X-Content-Type-Options': 'nosniff',
+	'X-Frame-Options': 'DENY',
+	'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+};
