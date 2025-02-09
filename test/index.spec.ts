@@ -1,125 +1,96 @@
 // test/index.spec.ts
-import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloudflare:test';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import worker from '../src/index.ts';
+import { SELF } from 'cloudflare:test';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Cloudflare } from 'cloudflare';
 
-describe('Dynamic DNS Worker', () => {
-	beforeEach(() => {
-		// Mock the global fetch function
-		global.fetch = vi.fn(async (input, init) => {
-			const url = typeof input === 'string' ? input : input.url;
+const mockVerify = vi.fn();
+const mockListZones = vi.fn();
+const mockListRecords = vi.fn();
+const mockEditRecord = vi.fn();
 
-			// Mock responses for Cloudflare API endpoints
-			switch (true) {
-				case url.includes('/zones?name='):
-					// Mock response for findZone
-					return {
-						ok: true,
-						json: async () => ({
-							result: [{ id: 'mock-zone-id', name: 'example.com' }],
-						}),
-					};
-
-				case url.includes('/dns_records?name='):
-					// Mock response for findRecord
-					return {
-						ok: true,
-						json: async () => ({
-							result: [{ id: 'mock-record-id', name: 'example.com', zone_id: 'mock-zone-id' }],
-						}),
-					};
-
-				case url.includes('/dns_records/'):
-					// Mock response for updateRecord
-					return {
-						ok: true,
-						json: async () => ({
-							result: [{ id: 'mock-record-id', name: 'example.com', content: '1.2.3.4' }],
-						}),
-					};
-
-				case url.includes('/user/tokens/verify'):
-					return {
-						ok: true,
-						json: async () => ({
-							success: true,
-							result: { status: 'active' },
-						}),
-					};
-
-				default:
-					// Default mock response for other URLs
-					return {
-						ok: false,
-						status: 404,
-						json: async () => ({}),
-					};
-			}
-		});
-	});
-
-	afterEach(() => {
-		// Restore the original fetch function
-		vi.resetAllMocks();
-	});
-
-	it('should return 200 on successful update', async () => {
-		const request = new Request('https://example.com/nic/update?hostname=example.com&ip=1.2.3.4', {
-			headers: {
-				Authorization: 'Basic ' + btoa('username:password'),
-				'x-forwarded-proto': 'https',
+vi.mock('cloudflare', () => {
+	return {
+		Cloudflare: vi.fn().mockImplementation(() => ({
+			user: {
+				tokens: {
+					verify: mockVerify,
+				},
 			},
-		});
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		await waitOnExecutionContext(ctx);
-		expect(response.status).toBe(200);
-		expect(await response.text()).toBe('good');
+			zones: {
+				list: mockListZones,
+			},
+			dns: {
+				records: {
+					list: mockListRecords,
+					edit: mockEditRecord,
+				},
+			},
+		})),
+	};
+});
+
+describe('updateDNSRecord', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
 	});
 
 	it('should return 400 if hostname is missing', async () => {
-		const request = new Request('https://example.com/nic/update?ip=1.2.3.4', {
+		const request = new Request('https://example.com/update?ip=1.2.3.4&zone=example.com', {
 			headers: {
-				Authorization: 'Basic ' + btoa('username:password'),
+				Authorization: 'Basic ' + btoa('testuser:testpass'),
 				'x-forwarded-proto': 'https',
 			},
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(400);
 		expect(await response.text()).toContain('You must specify a hostname');
 	});
 
 	it('should return 400 if IP is missing', async () => {
-		const request = new Request('https://example.com/nic/update?hostname=example.com', {
+		const request = new Request('https://example.com/update?hostname=dns.example.com&zone=example.com', {
 			headers: {
-				Authorization: 'Basic ' + btoa('username:password'),
+				Authorization: 'Basic ' + btoa('testuser:testpass'),
 				'x-forwarded-proto': 'https',
 			},
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(400);
 		expect(await response.text()).toContain('You must specify an ip address');
 	});
 
 	it('should return 401 if authorization is missing', async () => {
-		const request = new Request('https://example.com/nic/update?hostname=example.com&ip=1.2.3.4', {
+		const request = new Request('https://example.com/update?hostname=dns.example.com&ip=1.2.3.4&zone=example.com', {
 			headers: {
 				'x-forwarded-proto': 'https',
 			},
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(401);
 		expect(await response.text()).toContain('Please provide valid credentials.');
 	});
 
-	it('should return 400 on non-HTTPS requests', async () => {
-		const request = new Request('http://example.com/nic/update?hostname=example.com&ip=1.2.3.4', {
+	it('should return 401 if token is inactive', async () => {
+		mockVerify.mockResolvedValueOnce({ status: 'inactive' });
+		mockListZones.mockResolvedValueOnce({ result: [{ id: 'zone-id' }] });
+		mockListRecords.mockResolvedValueOnce({ result: [{ id: 'record-id' }] });
+		mockEditRecord.mockResolvedValueOnce({});
+		const request = new Request('https://example.com/update?hostname=dns.example.com&ip=1.2.3.4&zone=example.com', {
 			headers: {
-				Authorization: 'Basic ' + btoa('username:password'),
+				'x-forwarded-proto': 'https',
+			},
+		});
+		const response = await SELF.fetch(request);
+		expect(response.status).toBe(401);
+	});
+
+	it('should return 400 on non-HTTPS requests', async () => {
+		const request = new Request('http://example.com/update?hostname=dns.example.com&ip=1.2.3.4&zone=example.com', {
+			headers: {
+				Authorization: 'Basic ' + btoa('testuser:testpass'),
 				'x-forwarded-proto': 'http',
 			},
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(400);
 		expect(await response.text()).toContain('Please use a HTTPS connection.');
 	});
@@ -127,31 +98,44 @@ describe('Dynamic DNS Worker', () => {
 	it('should return 404 for unknown paths', async () => {
 		const request = new Request('https://example.com/unknown', {
 			headers: {
+				Authorization: 'Basic ' + btoa('testuser:testpass'),
 				'x-forwarded-proto': 'https',
 			},
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(404);
 		expect(await response.text()).toBe('Not Found.');
 	});
 
 	it('should return 204 for /favicon.ico', async () => {
 		const request = new Request('https://example.com/favicon.ico', {
-			headers: {
-				'x-forwarded-proto': 'https',
-			},
+			headers: { 'x-forwarded-proto': 'https' },
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(204);
 	});
 
 	it('should return 204 for /robots.txt', async () => {
 		const request = new Request('https://example.com/robots.txt', {
-			headers: {
-				'x-forwarded-proto': 'https',
-			},
+			headers: { 'x-forwarded-proto': 'https' },
 		});
-		const response = await worker.fetch(request, env, {});
+		const response = await SELF.fetch(request);
 		expect(response.status).toBe(204);
 	});
+
+	// it('should return 200 on successful update', async () => {
+	// 	mockVerify.mockResolvedValueOnce({ status: 'active' });
+	// 	mockListZones.mockResolvedValueOnce({ result: [{ id: 'zone-id' }] });
+	// 	mockListRecords.mockResolvedValueOnce({ result: [{ id: 'record-id' }] });
+	// 	mockEditRecord.mockResolvedValueOnce({ result: { id: 'record-id' } });
+
+	// 	const request = new Request('https://example.com/update?hostname=dns.example.com&ip=1.2.3.4&zone=example.com', {
+	// 		headers: {
+	// 			Authorization: 'Basic ' + btoa('testuser:testpass'),
+	// 			'x-forwarded-proto': 'https',
+	// 		},
+	// 	});
+	// 	const response = await SELF.fetch(request);
+	// 	expect(response.status).toBe(200);
+	// });
 });

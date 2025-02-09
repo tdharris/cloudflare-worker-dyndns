@@ -1,3 +1,11 @@
+import { Cloudflare, ClientOptions } from 'cloudflare'; // Import the official Cloudflare library
+
+type UpdateRecordRequest = {
+	hostname: string;
+	ip: string;
+	zoneName: string;
+}
+
 /**
  * Receives a HTTP request and replies with a response.
  * @param {Request} request
@@ -15,15 +23,14 @@ async function handleRequest(request) {
 		case '/nic/update':
 		case '/update':
 			if (request.headers.has('Authorization')) {
-				const { username, password } = basicAuthentication(request);
+				const { username, password } = parseBasicAuthentication(request);
+				const cloudflareClientOptions = { apiEmail: username, apiToken: password };
 
 				// Throws exception when query parameters aren't formatted correctly
 				const url = new URL(request.url);
-				verifyParameters(url);
+				const updateRecordRequest = parseSearchParams(url);
 
-				// Only returns this response when no exception is thrown.
-				const response = await informAPI(url, username, password);
-				return response;
+				return await updateDNSRecord(updateRecordRequest, cloudflareClientOptions);
 			}
 
 			throw new UnauthorizedException('Please provide valid credentials.');
@@ -43,52 +50,61 @@ async function handleRequest(request) {
  * @param {String} token
  * @returns {Promise<Response>}
  */
-async function informAPI(url, name, token) {
-	try {
-		// Parse Url
-		const hostname = url.searchParams.get('hostname');
-		// Get the IP address. This can accept two query parameters, this will
-		// use the "ip" query parameter if it is set, otherwise falling back to "myip".
-		const ip = url.searchParams.get('ip') || url.searchParams.get('myip');
+async function updateDNSRecord({
+	hostname,
+	ip,
+	zoneName
+}: UpdateRecordRequest, clientOptions: ClientOptions) {
+	// Initialize Cloudflare API client
+	const cloudflare = new Cloudflare(clientOptions);
 
-		// Initialize API Handler
-		const cloudflare = new Cloudflare({
-			token: token,
-		});
-
-		// Verify token
-		const isTokenValid = await cloudflare.verifyToken();
-		if (!isTokenValid) {
-			throw new UnauthorizedException('Invalid token.');
-		}
-
-		const zone = await cloudflare.findZone(name);
-		const record = await cloudflare.findRecord(zone, hostname);
-		const result = await cloudflare.updateRecord(record, ip);
-
-		// Only returns this response when no exception is thrown.
-		console.log(`INFO Successfully updated record.`);
-		return new Response(`good`, {
-			status: 200,
-			headers: {
-				'Content-Type': 'text/plain;charset=UTF-8',
-				'Cache-Control': 'no-store',
-			},
-		});
-	} catch (err) {
-		// Log the detailed error internally
-		console.error(`ERROR Worked failed to update record: ${JSON.stringify(err)}`);
-
-		const message = err.reason || err.message || 'Unknown Error';
-		return new Response(message, {
-			status: err.status || 500,
-			statusText: err.statusText || 'Internal Server Error',
-			headers: {
-				'Content-Type': 'text/plain;charset=UTF-8',
-				'Cache-Control': 'no-store',
-			},
-		});
+	// Verify token
+	const user = await cloudflare.user.tokens.verify();
+	if (user.status !== 'active') {
+		throw new UnauthorizedException('Invalid token.');
 	}
+
+	// Find zone
+	console.log(`INFO Searching for zone '${zoneName}'`);
+	const zones = (await cloudflare.zones.list({ name: zoneName })).result;
+	if (zones.length > 1) {
+		throw new BadRequestException(`Failed to find unique zone '${zoneName}'`);
+	} else if (zones.length === 0) {
+		throw new BadRequestException(`Failed to find zone '${zoneName}'`);
+	}
+	const zone = zones[0];
+	console.log(`INFO Found zone '${zone.name}'`);
+
+	// Find DNS record
+	console.log(`INFO Searching for record '${hostname}'`);
+	const records = (await cloudflare.dns.records.list({
+		zone_id: zone.id,
+		name: hostname as any,
+	})).result;
+	if (records.length > 1) {
+		throw new BadRequestException(`Failed to find unique DNS record '${hostname}'`);
+	} else if (records.length === 0 || records[0].id === undefined) {
+		throw new BadRequestException(`Failed to find DNS record '${hostname}'`);
+	}
+	const record = records[0];
+	console.log(`INFO Found record '${record.name}'`);
+
+	// Update DNS record
+	console.log(`INFO Updating record '${record.name}' to '${ip}'`);
+	await cloudflare.dns.records.edit(record.id, {
+		zone_id: zone.id,
+		content: ip,
+	});
+	console.log(`INFO Updated record '${record.name}' to '${ip}'`);
+
+	// Only returns this response when no exception is thrown.
+	return new Response(`good`, {
+		status: 200,
+		headers: {
+			'Content-Type': 'text/plain;charset=UTF-8',
+			'Cache-Control': 'no-store',
+		},
+	});
 }
 
 /**
@@ -96,27 +112,35 @@ async function informAPI(url, name, token) {
  * @param {string} url
  * @throws {UnauthorizedException}
  */
-function verifyParameters(url) {
+function parseSearchParams(url: URL): UpdateRecordRequest {
 	if (!url.searchParams) {
 		throw new BadRequestException('You must include proper query parameters');
 	}
 
-	if (!url.searchParams.get('hostname')) {
+	const hostname = url.searchParams.get('hostname');
+	const ip = url.searchParams.get('ip') || url.searchParams.get('myip');
+	const zone = url.searchParams.get('zone');
+
+	if (!hostname) {
 		throw new BadRequestException('You must specify a hostname');
 	}
-
-	if (!(url.searchParams.get('ip') || url.searchParams.get('myip'))) {
+	if (!ip) {
 		throw new BadRequestException('You must specify an ip address');
 	}
+	if (!zone) {
+		throw new BadRequestException('You must specify a zone name');
+	}
+
+	return { hostname, ip, zoneName: zone };
 }
 
 /**
  * Parse HTTP Basic Authorization value.
  * @param {Request} request
- * @throws {BadRequestException}
- * @returns {{ user: string, pass: string }}
+ * @throws {UnauthorizedException}
+ * @returns {{ username: string, password: string }}
  */
-function basicAuthentication(request) {
+function parseBasicAuthentication(request) {
 	const Authorization = request.headers.get('Authorization');
 
 	const [scheme, encoded] = Authorization.split(' ');
@@ -143,107 +167,28 @@ function basicAuthentication(request) {
 }
 
 class UnauthorizedException {
-	constructor(reason) {
+	constructor(message) {
 		this.status = 401;
 		this.statusText = 'Unauthorized';
-		this.reason = reason;
+		this.message = message;
 	}
 }
 
 class BadRequestException {
-	constructor(reason) {
+	constructor(message) {
 		this.status = 400;
 		this.statusText = 'Bad Request';
-		this.reason = reason;
-	}
-}
-
-class CloudflareApiException extends Error {
-	constructor(reason) {
-		super(reason);
-		this.status = 500;
-		this.statusText = "Internal Server Error";
-	}
-}
-
-class Cloudflare {
-	constructor(options) {
-		this.cloudflare_url = 'https://api.cloudflare.com/client/v4';
-
-		if (options.token) {
-			this.token = options.token;
-		}
-
-		this.verifyToken = async () => {
-			const response = await fetch(`${this.cloudflare_url}/user/tokens/verify`, {
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.token}`,
-				},
-			});
-			const body = await response.json();
-			if (body.success === false) {
-				return false;
-			}
-			if (body.errors?.length > 0) {
-				return false;
-			}
-			return body.result.status === 'active';
-		};
-
-		this.findZone = async (name) => {
-			const response = await fetch(`${this.cloudflare_url}/zones?name=${name}`, {
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.token}`,
-				},
-			});
-			const body = await response.json();
-			if (!body.success || body.result.length === 0) {
-				throw new CloudflareApiException(`Failed to find zone '${name}'`);
-			}
-			return body.result[0];
-		};
-
-		this.findRecord = async (zone, name) => {
-			const response = await fetch(`${this.cloudflare_url}/zones/${zone.id}/dns_records?name=${name}`, {
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.token}`,
-				},
-			});
-			const body = await response.json();
-			if (!body.success || body.result.length === 0) {
-				throw new CloudflareApiException(`Failed to find dns record '${name}'`);
-			}
-			return body.result[0];
-		};
-
-		this.updateRecord = async (record, value) => {
-			record.content = value;
-			const response = await fetch(`${this.cloudflare_url}/zones/${record.zone_id}/dns_records/${record.id}`, {
-				method: 'PUT',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.token}`,
-				},
-				body: JSON.stringify(record),
-			});
-			const body = await response.json();
-			if (!body.success) {
-				throw new CloudflareApiException("Failed to update dns record");
-			}
-			return body.result[0];
-		};
+		this.message = message;
 	}
 }
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
 		try {
+			console.log(`INFO Requesting IP: ${request.headers.get('CF-Connecting-IP')}`);
 			return await handleRequest(request);
 		} catch (err) {
-			const message = err.reason || err.stack || 'Unknown Error';
+			const message = err.message || err.stack || 'Unknown Error';
 
 			// Log the detailed error internally
 			console.error('ERROR', request.method, request.url, '=>', err);
