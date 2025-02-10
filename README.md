@@ -26,32 +26,26 @@ The Cloudflare Worker handles HTTP requests to update DNS records dynamically. I
 
 1. Clone the repository:
 
-    ```sh
+    ```shell
     git clone https://github.com/yourusername/cloudflare-worker-dyndns.git
     cd cloudflare-worker-dyndns
     ```
 
 2. Install dependencies:
 
-    ```sh
+    ```shell
     npm install
-    ```
-
-3. Configure environment variables:
-
-    Create a `.env` file in the root directory with the following content:
-
-    ```env
-    CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
     ```
 
 ### Deployment
 
-1. Deploy the Cloudflare Worker:
+Deploy the Cloudflare Worker:
 
-    ```sh
-    npm run deploy
-    ```
+```shell
+npm run deploy
+```
+
+For more details, see the Cloudflare docs [Workers Getting Started](https://developers.cloudflare.com/workers/get-started/guide/).
 
 ## Usage
 
