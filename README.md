@@ -27,7 +27,7 @@ The Cloudflare Worker handles HTTP requests to update DNS records dynamically. I
 1. Clone the repository:
 
     ```shell
-    git clone https://github.com/yourusername/cloudflare-worker-dyndns.git
+    git clone https://github.com/tdharris/cloudflare-worker-dyndns.git
     cd cloudflare-worker-dyndns
     ```
 
