@@ -6,7 +6,8 @@
   "packageRules": [
     {
       "matchPackagePatterns": [
-        "^@cloudflare/",
+        "^@cloudflare/workers-types$",
+        "^@cloudflare/types$",
         "^cloudflare$",
         "^wrangler$"
       ],
@@ -20,7 +21,14 @@
     },
     {
       "matchPackagePatterns": ["vitest", "^@vitest/", "^@cloudflare/vitest-pool-workers$"],
-      "groupName": "testing"
+      "groupName": "testing",
+      "automerge": true
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["dependencies", "major-update"]
     },
     {
       "matchDepTypes": ["dependencies"],
