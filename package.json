@@ -13,15 +13,15 @@
 		"format": "npx prettier --write '**/*.{ts,js,cjs,json}'"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.5.2",
-		"@cloudflare/workers-types": "4.20241205.0",
-		"@typescript-eslint/eslint-plugin": "8.18.0",
-		"typescript": "5.7.2",
-		"vitest": "2.1.9",
-		"wrangler": "3.95.0"
+		"@cloudflare/vitest-pool-workers": "^0.8.68",
+		"@cloudflare/workers-types": "4.20250831.0",
+		"@typescript-eslint/eslint-plugin": "8.41.0",
+		"typescript": "5.9.2",
+		"vitest": "3.2.4",
+		"wrangler": "4.33.1"
 	},
 	"dependencies": {
-		"@cloudflare/types": "6.29.1",
-		"cloudflare": "4.0.0"
+		"@cloudflare/types": "7.0.0",
+		"cloudflare": "4.5.0"
 	}
 }
