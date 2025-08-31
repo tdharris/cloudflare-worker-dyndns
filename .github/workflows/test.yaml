@@ -2,8 +2,11 @@ name: Run tests
 
 on:
   push:
-    branches:
-      - main
+    paths-ignore:
+      - '.github/**'
+      - '**/*.md'
+      - '**/*.yaml'
+  pull_request:
     paths-ignore:
       - '.github/**'
       - '**/*.md'
