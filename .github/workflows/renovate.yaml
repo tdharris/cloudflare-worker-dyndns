@@ -1,0 +1,41 @@
+name: Renovate
+on:
+  # Allows manual/automated ad-hoc trigger
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: "Override default log level"
+        required: false
+        default: "info"
+        type: string
+      overrideSchedule:
+        description: "Override all schedules"
+        required: false
+        default: "false"
+        type: string
+      dryRun:
+        description: "Run Renovate in dry-run mode"
+        required: false
+        default: "false"
+        type: string
+  # Run monthly on the first Thursday and Friday at 2:18pm MST (Github Actions cron is UTC)
+  # Run at an odd time to avoid overlap with too many other workflows on GitHub Actions
+  schedule:
+    - cron: "18 21 1-7 * 4,5"
+concurrency: renovate
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@248bf5a619694187930adc80b9343c37761c173f # v43.0.1
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Override schedule if set
+          RENOVATE_FORCE: ${{ github.event.inputs.overrideSchedule == 'true' && '{''schedule'':null}' || '' }}
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun }}
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}

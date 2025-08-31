@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "packageRules": [
+    {
+      "matchPackagePatterns": [
+        "^@cloudflare/",
+        "^cloudflare$",
+        "^wrangler$"
+      ],
+      "groupName": "cloudflare",
+      "automerge": false
+    },
+    {
+      "matchPackagePatterns": ["typescript", "^@typescript-eslint/"],
+      "groupName": "typescript",
+      "stabilityDays": 7
+    },
+    {
+      "matchPackagePatterns": ["vitest", "^@vitest/", "^@cloudflare/vitest-pool-workers$"],
+      "groupName": "testing"
+    },
+    {
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "automergeType": "branch",
+      "stabilityDays": 3
+    },
+    {
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": false,
+      "stabilityDays": 7
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ],
+  "timezone": "UTC",
+  "schedule": ["after 10pm on thursday"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "rebaseWhen": "behind-base-branch",
+  "platformAutomerge": true,
+  "dependencyDashboard": true,
+  "rangeStrategy": "pin",
+  "ignorePaths": [
+    "**/node_modules/**"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "dependencies"],
+    "assignees": ["@tdharris"],
+    "schedule": "at any time"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["after 11pm on thursday"]
+  },
+  "separateMajorMinor": true,
+  "separateMultipleMajor": true,
+  "commitMessagePrefix": "chore(deps):",
+  "postUpdateOptions": ["npmDedupe"]
+}
