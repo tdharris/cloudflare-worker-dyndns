@@ -48,7 +48,7 @@
   "labels": ["dependencies"],
   "rebaseWhen": "behind-base-branch",
   "platformAutomerge": true,
-  "dependencyDashboard": true,
+  "dependencyDashboard": false,
   "rangeStrategy": "pin",
   "ignorePaths": [
     "**/node_modules/**"
