@@ -42,7 +42,6 @@
     }
   ],
   "timezone": "UTC",
-  "schedule": ["after 10pm on thursday"],
   "prHourlyLimit": 2,
   "prConcurrentLimit": 10,
   "labels": ["dependencies"],
@@ -56,12 +55,10 @@
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["security", "dependencies"],
-    "assignees": ["@tdharris"],
-    "schedule": "at any time"
+    "assignees": ["@tdharris"]
   },
   "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["after 11pm on thursday"]
+    "enabled": true
   },
   "separateMajorMinor": true,
   "separateMultipleMajor": true,
