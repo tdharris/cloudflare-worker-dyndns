@@ -3,6 +3,9 @@
 
 This project provides a Cloudflare Worker solution for managing dynamic DNS updates, described by my [Tame Your Dynamic IP: A Cloudflare Worker Solution for Unifi](https://blog.tdharris.com/tame-your-dynamic-ip-a-cloudflare-worker-solution-for-unifi) article.
 
+> [!NOTE]
+> As of UniFi Network Application [9.1.120](https://community.ui.com/releases/UniFi-Network-Application-9-1-120/a5e88ae2-3c44-420a-bebb-5120bf2288b2), there is native support for Cloudflare as a Dynamic DNS provider. This means you can now configure your Unifi network to update your Cloudflare DNS records directly without needing a custom Cloudflare Worker. For more details, see [UniFi Gateway - Dynamic DNS](https://help.ui.com/hc/en-us/articles/9203184738583-UniFi-Gateway-Dynamic-DNS).
+
 ## Overview
 
 The Cloudflare Worker handles HTTP requests to update DNS records dynamically. It verifies the request, authenticates using basic authentication, and updates the DNS record with the provided IP address.
